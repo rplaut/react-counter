@@ -16,13 +16,30 @@ function App() {
     setTimeout(() => setFlash(false), 300);
   };
 
+  const [name, setName] = useState("");
+  const handleNameChange = (e) => {
+    setName(e.target.value);
+  };
+
   return (
+  <div>
+    <div style={{ marginBottom: '20px' }}>
+      <label htmlFor="name">Enter your name: </label>
+      <input
+        id="name"
+        type="text"
+        value={name}
+        onChange={handleNameChange}
+        style={{ padding: '5px', marginLeft: '10px' }}
+      />
+      {name && <p>Hello, {name}!</p>}
+    </div>
+
     <div className="container">
       <h1 className="heading">🧩 Conditional Rendering + Styling</h1>
 
       <CounterButton label={showCounter ? "Hide Counter" : "Show Counter"} onClick={toggleVisibility} />
 
-      {/* Only show counter if showCounter is true */}
       {showCounter && (
         <>
           <CounterDisplay value={count} flash={flash} />
@@ -31,7 +48,9 @@ function App() {
         </>
       )}
     </div>
-  );
+  </div>
+);
+
 }
 
 
