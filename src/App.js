@@ -3,7 +3,12 @@ import CounterButton from "./CounterButton";
 import CounterDisplay from "./CounterDisplay";
 import UserManager from "./UserManager";
 import supabase from "./supabaseClient";
+import { fetchPullRequests } from "./githubApi";
+import GitHubPRList from "./GitHubPRList";
 import "./App.css";
+
+const GITHUB_OWNER = "rplaut"; // example: 'vercel'
+const GITHUB_REPO = "react-counter"; // example: 'next.js'
 
 function App() {
   const [user, setUser] = useState(null); // logged-in username
@@ -15,6 +20,8 @@ function App() {
   const [userList, setUserList] = useState([]);
   const [newTeam, setNewTeam] = useState("");
   const [newRole, setNewRole] = useState("");
+  const [githubUsername, setGithubUsername] = useState("");
+  const [userPullRequests, setUserPullRequests] = useState([]);
 
   const handleQuickLogin = async (username) => {
     const { data: userData, error } = await supabase
@@ -62,11 +69,17 @@ function App() {
       return;
     }
 
-    const { error } = await supabase
-      .from("users")
-      .insert([
-        { username: newUsername, counter: 0, team: newTeam, role: newRole },
-      ]);
+    const { error } = await supabase.from("users").insert([
+      {
+        username: newUsername,
+        counter: 0,
+        team: newTeam,
+        role: newRole,
+        github_username: githubUsername || null,
+      },
+    ]);
+
+    setGithubUsername("");
 
     if (error) {
       alert("Error creating user.");
@@ -121,20 +134,51 @@ function App() {
       if (!user) {
         const { data, error } = await supabase
           .from("users")
-          .select("username, counter, team, role")
+          .select("username, counter, team, role, github_username") // include this
           .order("username", { ascending: true });
 
         if (error) {
           console.error("Supabase fetch error:", error.message);
         } else {
           setUserList(data);
-          console.log("Fetched users:", data);
         }
       }
     };
 
     fetchUsers();
   }, [user]);
+
+  useEffect(() => {
+    const fetchPRsForUser = async () => {
+      if (!user) return;
+
+      const matchedUser = userList.find(
+        (u) => u.username === user && u.github_username
+      );
+
+      if (!matchedUser || !matchedUser.github_username) {
+        setUserPullRequests([]);
+        return;
+      }
+
+      try {
+        const allPRs = await fetchPullRequests(GITHUB_OWNER, GITHUB_REPO);
+
+        const prs = allPRs.filter(
+          (pr) =>
+            pr.user?.login?.toLowerCase() ===
+            matchedUser.github_username.toLowerCase()
+        );
+
+        setUserPullRequests(prs);
+      } catch (err) {
+        console.error("GitHub PR fetch failed:", err.message);
+        setUserPullRequests([]);
+      }
+    };
+
+    fetchPRsForUser();
+  }, [user, userList]);
 
   const toggleVisibility = () => setShowCounter(!showCounter);
 
@@ -187,6 +231,13 @@ function App() {
                 <option value="VP of Product">VP of Product</option>
                 <option value="VP of PMO">VP of PMO</option>
               </select>
+              <input
+                type="text"
+                placeholder="GitHub Username (optional)"
+                value={githubUsername}
+                onChange={(e) => setGithubUsername(e.target.value)}
+                style={{ padding: "5px", marginRight: "10px" }}
+              />
               <button type="submit">Create User</button>
             </form>
 
@@ -291,6 +342,9 @@ function App() {
               <CounterButton label="Reset" onClick={reset} />
             </>
           )}
+
+          <GitHubPRList pullRequests={userPullRequests} />
+
           <UserManager refreshTrigger={refreshKey} />
         </>
       )}
