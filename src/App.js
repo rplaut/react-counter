@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import CounterButton from "./CounterButton";
 import CounterDisplay from "./CounterDisplay";
 import UserManager from "./UserManager";
@@ -23,6 +23,16 @@ function App() {
   const [githubUsername, setGithubUsername] = useState("");
   const [userPullRequests, setUserPullRequests] = useState([]);
 
+  // --- NOTE FEATURE STATE -----------------
+  const [noteDate, setNoteDate] = useState(() => {
+    // default to today in YYYY‑MM‑DD format
+    return new Date().toISOString().split("T")[0];
+  });
+  const [noteText, setNoteText] = useState("");
+  const [userNotes, setUserNotes] = useState([]);
+
+  // ----------------------------------------------
+
   const handleQuickLogin = async (username) => {
     const { data: userData, error } = await supabase
       .from("users")
@@ -35,8 +45,11 @@ function App() {
       return;
     }
 
-    setUser(username);
+    setUser(userData); // ✅ Store full user object including id
     setCount(userData.counter || 0);
+
+    const notes = await fetchNotesForUser(userData.id); // ✅ Pass user ID
+    setUserNotes(notes);
   };
 
   const handleCreateUser = async (e) => {
@@ -129,6 +142,26 @@ function App() {
     setTimeout(() => setFlash(false), 300);
   };
 
+  const fetchNotesForUser = useCallback(async () => {
+    if (!user?.id) {
+      console.warn("No user ID found. Cannot fetch notes.");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("notes")
+      .select("id, date, note_text, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching notes:", error);
+      return;
+    }
+
+    setUserNotes(Array.isArray(data) ? data : []);
+  }, [user?.id]);
+
   useEffect(() => {
     const fetchUsers = async () => {
       if (!user) {
@@ -153,7 +186,7 @@ function App() {
       if (!user) return;
 
       const matchedUser = userList.find(
-        (u) => u.username === user && u.github_username
+        (u) => u.username === user.username && u.github_username
       );
 
       if (!matchedUser || !matchedUser.github_username) {
@@ -180,6 +213,12 @@ function App() {
     fetchPRsForUser();
   }, [user, userList]);
 
+  useEffect(() => {
+    if (user?.id) {
+      fetchNotesForUser();
+    }
+  }, [user?.id, fetchNotesForUser]);
+
   const toggleVisibility = () => setShowCounter(!showCounter);
 
   const groupedUsers = userList.reduce((acc, user) => {
@@ -189,6 +228,8 @@ function App() {
   }, {});
 
   console.log(userList);
+
+  console.log("👤 user =", user);
 
   return (
     <div className="container">
@@ -329,7 +370,7 @@ function App() {
         </div>
       ) : (
         <>
-          <h1 className="heading">Welcome, {user}!</h1>
+          <h1 className="heading">Welcome, {user.username}!</h1>
           <CounterButton label="Logout" onClick={handleLogout} />
           <CounterButton
             label={showCounter ? "Hide Counter" : "Show Counter"}
@@ -346,6 +387,110 @@ function App() {
           <GitHubPRList pullRequests={userPullRequests} />
 
           <UserManager refreshTrigger={refreshKey} />
+
+          {user && user.id ? (
+            <div
+              style={{
+                marginTop: "40px",
+                padding: "20px",
+                backgroundColor: "#f1f1f1",
+                borderRadius: "10px",
+              }}
+            >
+              <h2>📝 Add Summary Note</h2>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+
+                  if (!noteText.trim()) {
+                    alert("Please enter a note before submitting.");
+                    return;
+                  }
+
+                  const { error } = await supabase.from("notes").insert([
+                    {
+                      user_id: user.id,
+                      date: noteDate,
+                      note_text: noteText.trim(),
+                    },
+                  ]);
+
+                  if (error) {
+                    alert("Failed to save note.");
+                    console.error("Insert error:", error);
+                    return;
+                  }
+
+                  // Reset form
+                  setNoteText("");
+                  setNoteDate(new Date().toISOString().split("T")[0]);
+
+                  // Refresh note list
+                  fetchNotesForUser();
+                }}
+              >
+                <div style={{ marginBottom: "10px" }}>
+                  <label>
+                    Date:{" "}
+                    <input
+                      type="date"
+                      value={noteDate}
+                      onChange={(e) => setNoteDate(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <div style={{ marginBottom: "10px" }}>
+                  <label>
+                    Notes:{" "}
+                    <textarea
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      rows="4"
+                      cols="50"
+                    />
+                  </label>
+                </div>
+                <button type="submit">Save Note</button>
+              </form>
+
+              <hr style={{ marginTop: "30px", marginBottom: "20px" }} />
+              <h3>Submitted Notes</h3>
+
+              {Array.isArray(userNotes) && userNotes.length === 0 ? (
+                <p>No notes yet.</p>
+              ) : (
+                <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+                  {(Array.isArray(userNotes) ? [...userNotes] : [])
+                    .sort((a, b) => new Date(b.date) - new Date(a.date))
+                    .map((note) => (
+                      <li
+                        key={note.id}
+                        style={{
+                          marginBottom: "20px",
+                          padding: "10px",
+                          border: "1px solid #ccc",
+                          borderRadius: "8px",
+                          backgroundColor: "#fdfdfd",
+                        }}
+                      >
+                        <div style={{ fontSize: "0.9em", color: "#666" }}>
+                          {note.date}
+                        </div>
+                        <div
+                          style={{ whiteSpace: "pre-wrap", marginTop: "5px" }}
+                        >
+                          {note.note_text}
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          ) : user ? (
+            <p>Unable to load notes (user ID missing)</p>
+          ) : (
+            <p>Please select a user to begin.</p>
+          )}
         </>
       )}
     </div>
