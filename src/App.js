@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+// src/App.js
+
+import React, { useEffect, useReducer } from "react";
 import CounterButton from "./CounterButton";
 import CounterDisplay from "./CounterDisplay";
 import UserManager from "./UserManager";
@@ -10,28 +12,152 @@ import "./App.css";
 const GITHUB_OWNER = "rplaut"; // example: 'vercel'
 const GITHUB_REPO = "react-counter"; // example: 'next.js'
 
+// 2. Define initial state object
+const initialState = {
+  user: null,
+  userList: [],
+  count: 0,
+  showCounter: true,
+  flash: false,
+  refreshKey: 0,
+  nameInput: "",
+  newTeam: "",
+  newRole: "",
+  githubUsername: "",
+  userPullRequests: [],
+  noteDate: new Date().toISOString().split("T")[0],
+  noteText: "",
+  userNotes: [],
+};
+
+// 3. Define a reducer function
+function reducer(state, action) {
+  switch (action.type) {
+    case "SET_FIELD":
+      return {
+        ...state,
+        [action.field]: action.value,
+      };
+
+    case "CREATE_USER_SUCCESS":
+      return {
+        ...state,
+        nameInput: "",
+        newTeam: "",
+        newRole: "",
+        githubUsername: "",
+        userList: [...state.userList, action.payload],
+      };
+
+    case "LOGIN_SUCCESS":
+      return {
+        ...state,
+        user: action.payload,
+        count: action.payload.counter || 0,
+      };
+
+    case "SET_NOTES":
+      return {
+        ...state,
+        userNotes: action.payload,
+      };
+
+    case "LOGOUT":
+      return {
+        ...state,
+        user: null,
+        count: 0,
+        userNotes: [],
+        userPullRequests: [],
+      };
+
+    case "SET_COUNT":
+      return {
+        ...state,
+        count: action.payload,
+      };
+
+    case "SET_FLASH":
+      return {
+        ...state,
+        flash: action.payload,
+      };
+
+    case "INCREMENT_REFRESH_KEY":
+      return {
+        ...state,
+        refreshKey: state.refreshKey + 1,
+      };
+
+    case "SET_USER_LIST":
+      return {
+        ...state,
+        userList: action.payload,
+      };
+
+    case "SET_PULL_REQUESTS":
+      return {
+        ...state,
+        userPullRequests: action.payload,
+      };
+
+    case "TOGGLE_COUNTER":
+      return {
+        ...state,
+        showCounter: !state.showCounter,
+      };
+
+    case "SUBMIT_NOTE_SUCCESS":
+      return {
+        ...state,
+        noteText: "", // Clear the textarea
+        noteDate: new Date().toISOString().split("T")[0], // Reset date to today
+        userNotes: action.payload, // Update the notes list with the fresh data
+      };
+
+    default:
+      return state;
+  }
+}
+
 function App() {
-  const [user, setUser] = useState(null); // logged-in username
-  const [nameInput, setNameInput] = useState("");
-  const [count, setCount] = useState(0);
-  const [showCounter, setShowCounter] = useState(true);
-  const [flash, setFlash] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [userList, setUserList] = useState([]);
-  const [newTeam, setNewTeam] = useState("");
-  const [newRole, setNewRole] = useState("");
-  const [githubUsername, setGithubUsername] = useState("");
-  const [userPullRequests, setUserPullRequests] = useState([]);
+  // 4. Initialize state with useReducer
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const {
+    user,
+    userList,
+    count,
+    showCounter,
+    flash,
+    refreshKey,
+    nameInput,
+    newTeam,
+    newRole,
+    githubUsername,
+    userPullRequests,
+    noteDate,
+    noteText,
+    userNotes,
+  } = state;
 
-  // --- NOTE FEATURE STATE -----------------
-  const [noteDate, setNoteDate] = useState(() => {
-    // default to today in YYYY‑MM‑DD format
-    return new Date().toISOString().split("T")[0];
-  });
-  const [noteText, setNoteText] = useState("");
-  const [userNotes, setUserNotes] = useState([]);
-
-  // ----------------------------------------------
+  // --- REMOVE OLD useState hooks ---
+  // const [user, setUser] = useState(null);
+  // const [nameInput, setNameInput] = useState("");
+  // const [count, setCount] = useState(0);
+  // const [showCounter, setShowCounter] = useState(true);
+  // const [flash, setFlash] = useState(false);
+  // const [refreshKey, setRefreshKey] = useState(0);
+  // const [userList, setUserList] = useState([]);
+  // const [newTeam, setNewTeam] = useState("");
+  // const [newRole, setNewRole] = useState("");
+  // const [githubUsername, setGithubUsername] = useState("");
+  // const [userPullRequests, setUserPullRequests] = useState([]);
+  // const [noteDate, setNoteDate] = useState(() => {
+  //   return new Date().toISOString().split("T")[0];
+  // });
+  // const [noteText, setNoteText] = useState("");
+  // const [userNotes, setUserNotes] = useState([]);
+  // ------------------------------------
 
   const handleQuickLogin = async (username) => {
     const { data: userData, error } = await supabase
@@ -45,11 +171,16 @@ function App() {
       return;
     }
 
-    setUser(userData); // ✅ Store full user object including id
-    setCount(userData.counter || 0);
+    // START of code to UPDATE
+    // Dispatch the action to log the user in and set their counter
+    dispatch({ type: "LOGIN_SUCCESS", payload: userData });
 
-    const notes = await fetchNotesForUser(userData.id); // ✅ Pass user ID
-    setUserNotes(notes);
+    // Fetch notes for the logged-in user...
+    const notes = await fetchNotesForUser(userData.id);
+
+    // ...and dispatch an action to set them in the state
+    dispatch({ type: "SET_NOTES", payload: notes });
+    // END of code to UPDATE
   };
 
   const handleCreateUser = async (e) => {
@@ -82,144 +213,135 @@ function App() {
       return;
     }
 
-    const { error } = await supabase.from("users").insert([
-      {
-        username: newUsername,
-        counter: 0,
-        team: newTeam,
-        role: newRole,
-        github_username: githubUsername || null,
-      },
-    ]);
+    const newUser = {
+      username: newUsername,
+      counter: 0,
+      team: newTeam,
+      role: newRole,
+      github_username: githubUsername || null,
+    };
 
-    setGithubUsername("");
+    const { error } = await supabase.from("users").insert([newUser]);
 
     if (error) {
       alert("Error creating user.");
+      console.error("Insert error:", error); // It's good practice to log the error
       return;
     }
 
-    setNameInput("");
-    setNewTeam("");
-    setNewRole("");
-    setUserList((prev) => [
-      ...prev,
-      { username: newUsername, counter: 0, team: newTeam, role: newRole },
-    ]);
+    dispatch({ type: "CREATE_USER_SUCCESS", payload: newUser });
   };
 
   // 🔁 Logout
   const handleLogout = () => {
-    setUser(null);
-    setCount(0);
+    dispatch({ type: "LOGOUT" });
   };
 
   // UI logic
   const increment = async () => {
     const newCount = count + 1;
-    setCount(newCount);
+    dispatch({ type: "SET_COUNT", payload: newCount });
 
     if (user) {
+      // Note: We're not using .eq("username", user) anymore,
+      // because our user object from state is the full user record.
       await supabase
         .from("users")
         .update({ counter: newCount })
-        .eq("username", user);
+        .eq("id", user.id); // Use the user's ID for the update
 
-      setRefreshKey((prev) => prev + 1); // refresh AFTER update
+      dispatch({ type: "INCREMENT_REFRESH_KEY" }); // refresh AFTER update
     }
   };
 
   const reset = async () => {
-    setCount(0);
-    setFlash(true);
+    dispatch({ type: "SET_COUNT", payload: 0 });
+    dispatch({ type: "SET_FLASH", payload: true });
 
     if (user) {
-      await supabase.from("users").update({ counter: 0 }).eq("username", user);
+      await supabase.from("users").update({ counter: 0 }).eq("id", user.id); // Also use user.id here for consistency
 
-      setRefreshKey((prev) => prev + 1);
+      dispatch({ type: "INCREMENT_REFRESH_KEY" });
     }
 
-    setTimeout(() => setFlash(false), 300);
+    setTimeout(() => dispatch({ type: "SET_FLASH", payload: false }), 300);
   };
 
-  const fetchNotesForUser = useCallback(async () => {
-    if (!user?.id) {
-      console.warn("No user ID found. Cannot fetch notes.");
-      return;
+  const fetchNotesForUser = async (userId) => {
+    if (!userId) {
+      console.warn("No user ID was provided to fetch notes.");
+      return []; // Return an empty array to prevent errors
     }
 
     const { data, error } = await supabase
       .from("notes")
       .select("id, date, note_text, created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId) // Use the userId argument
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error fetching notes:", error);
-      return;
+      return []; // Return an empty array on error
     }
 
-    setUserNotes(Array.isArray(data) ? data : []);
-  }, [user?.id]);
+    // Instead of setting state, we just return the data.
+    return Array.isArray(data) ? data : [];
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
+      // We only fetch the user list when nobody is logged in.
       if (!user) {
         const { data, error } = await supabase
           .from("users")
-          .select("username, counter, team, role, github_username") // include this
+          .select("username, counter, team, role, github_username")
           .order("username", { ascending: true });
 
         if (error) {
           console.error("Supabase fetch error:", error.message);
         } else {
-          setUserList(data);
+          // Dispatch an action to set the user list in our state
+          dispatch({ type: "SET_USER_LIST", payload: data });
         }
       }
     };
 
     fetchUsers();
-  }, [user]);
+  }, [user]); // This dependency array is correct.
 
   useEffect(() => {
     const fetchPRsForUser = async () => {
-      if (!user) return;
-
-      const matchedUser = userList.find(
-        (u) => u.username === user.username && u.github_username
-      );
-
-      if (!matchedUser || !matchedUser.github_username) {
-        setUserPullRequests([]);
+      // If there's no user, or the user object doesn't have a github_username,
+      // we clear the pull requests and exit.
+      if (!user || !user.github_username) {
+        dispatch({ type: "SET_PULL_REQUESTS", payload: [] });
         return;
       }
 
       try {
         const allPRs = await fetchPullRequests(GITHUB_OWNER, GITHUB_REPO);
 
+        // Filter PRs created by the user's github_username (case-insensitive)
         const prs = allPRs.filter(
           (pr) =>
-            pr.user?.login?.toLowerCase() ===
-            matchedUser.github_username.toLowerCase()
+            pr.user?.login?.toLowerCase() === user.github_username.toLowerCase()
         );
 
-        setUserPullRequests(prs);
+        // Dispatch the fetched PRs to our state
+        dispatch({ type: "SET_PULL_REQUESTS", payload: prs });
       } catch (err) {
         console.error("GitHub PR fetch failed:", err.message);
-        setUserPullRequests([]);
+        // In case of an error, ensure the PR list is empty
+        dispatch({ type: "SET_PULL_REQUESTS", payload: [] });
       }
     };
 
     fetchPRsForUser();
-  }, [user, userList]);
+  }, [user]); // The dependency array now only needs `user`
 
-  useEffect(() => {
-    if (user?.id) {
-      fetchNotesForUser();
-    }
-  }, [user?.id, fetchNotesForUser]);
-
-  const toggleVisibility = () => setShowCounter(!showCounter);
+  const toggleVisibility = () => {
+    dispatch({ type: "TOGGLE_COUNTER" });
+  };
 
   const groupedUsers = userList.reduce((acc, user) => {
     if (!acc[user.team]) acc[user.team] = [];
@@ -242,12 +364,24 @@ function App() {
                 type="text"
                 placeholder="New username"
                 value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_FIELD",
+                    field: "nameInput",
+                    value: e.target.value,
+                  })
+                }
                 style={{ padding: "5px", marginRight: "10px" }}
               />
               <select
                 value={newTeam}
-                onChange={(e) => setNewTeam(e.target.value)}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_FIELD",
+                    field: "newTeam",
+                    value: e.target.value,
+                  })
+                }
                 style={{ padding: "5px", marginRight: "10px" }}
               >
                 <option value="">Select Team</option>
@@ -257,7 +391,13 @@ function App() {
               </select>
               <select
                 value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_FIELD",
+                    field: "newRole",
+                    value: e.target.value,
+                  })
+                }
                 style={{ padding: "5px", marginRight: "10px" }}
               >
                 <option value="">Select Role</option>
@@ -276,7 +416,13 @@ function App() {
                 type="text"
                 placeholder="GitHub Username (optional)"
                 value={githubUsername}
-                onChange={(e) => setGithubUsername(e.target.value)}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_FIELD",
+                    field: "githubUsername",
+                    value: e.target.value,
+                  })
+                }
                 style={{ padding: "5px", marginRight: "10px" }}
               />
               <button type="submit">Create User</button>
@@ -421,12 +567,14 @@ function App() {
                     return;
                   }
 
-                  // Reset form
-                  setNoteText("");
-                  setNoteDate(new Date().toISOString().split("T")[0]);
+                  // After successful insert, fetch the updated list of notes
+                  const updatedNotes = await fetchNotesForUser(user.id);
 
-                  // Refresh note list
-                  fetchNotesForUser();
+                  // Dispatch one action to reset the form and update the list
+                  dispatch({
+                    type: "SUBMIT_NOTE_SUCCESS",
+                    payload: updatedNotes,
+                  });
                 }}
               >
                 <div style={{ marginBottom: "10px" }}>
@@ -435,7 +583,13 @@ function App() {
                     <input
                       type="date"
                       value={noteDate}
-                      onChange={(e) => setNoteDate(e.target.value)}
+                      onChange={(e) =>
+                        dispatch({
+                          type: "SET_FIELD",
+                          field: "noteDate",
+                          value: e.target.value,
+                        })
+                      }
                     />
                   </label>
                 </div>
@@ -444,7 +598,13 @@ function App() {
                     Notes:{" "}
                     <textarea
                       value={noteText}
-                      onChange={(e) => setNoteText(e.target.value)}
+                      onChange={(e) =>
+                        dispatch({
+                          type: "SET_FIELD",
+                          field: "noteText",
+                          value: e.target.value,
+                        })
+                      }
                       rows="4"
                       cols="50"
                     />
